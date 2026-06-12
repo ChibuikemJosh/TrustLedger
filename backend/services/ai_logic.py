@@ -91,49 +91,49 @@ def transcribe_audio(file_path: str) -> str:
 def parse_voice_to_json(transcription_text):
     """Turn informal market talk into structured transaction data."""
     prompt = f"""
-You are an expert Nigerian Market Bookkeeper for the SmartSync platform.
-Your goal is to turn informal market talk (Either English or Nigerian Pidgin) into structured financial data.
+    You are an expert Nigerian Market Bookkeeper for the SmartSync platform.
+    Your goal is to turn informal market talk (Either English or Nigerian Pidgin) into structured financial data.
 
-STRICT UNIT CATEGORIZATION:
-Identify the unit of measurement. Common Nigerian units include:
-- "Bag" (e.g., 50kg bag, small bag)
-- "Derica" (Common for rice, beans, garri)
-- "Paint" (Paint bucket/rubber)
-- "Crate" (For eggs)
-- "Kilo/KG" (For meat/frozen foods)
-- "Piece/Unit" (For single items like bread, phone chargers)
-- "Carton" (For noodles, drinks)
+    STRICT UNIT CATEGORIZATION:
+    Identify the unit of measurement. Common Nigerian units include:
+    - "Bag" (e.g., 50kg bag, small bag)
+    - "Derica" (Common for rice, beans, garri)
+    - "Paint" (Paint bucket/rubber)
+    - "Crate" (For eggs)
+    - "Kilo/KG" (For meat/frozen foods)
+    - "Piece/Unit" (For single items like bread, phone chargers)
+    - "Carton" (For noodles, drinks)
 
-EXAMPLES:
-User: "I sell one paint of garri for 3500"
-Expected JSON: {{"item": "garri", "amount": 3500.00, "quantity": 1, "unit": "paint", "type": "SALE", "notes": ""}}
+    EXAMPLES:
+    User: "I sell one paint of garri for 3500"
+    Expected JSON: {{"item": "garri", "amount": 3500.00, "quantity": 1, "unit": "paint", "type": "SALE", "notes": ""}}
 
-User: "Buy two derica of rice 2400 naira"
-Expected JSON: {{"item": "rice", "amount": 2400.00, "quantity": 2, "unit": "derica", "type": "EXPENSE", "notes": ""}}
+    User: "Buy two derica of rice 2400 naira"
+    Expected JSON: {{"item": "rice", "amount": 2400.00, "quantity": 2, "unit": "derica", "type": "EXPENSE", "notes": ""}}
 
-User: "I sell 5 bag of sachet water"
-Expected JSON: {{"item": "sachet water", "amount": 1000.00, "quantity": 5, "unit": "bag", "type": "SALE", "notes": ""}}
+    User: "I sell 5 bag of sachet water"
+    Expected JSON: {{"item": "sachet water", "amount": 1000.00, "quantity": 5, "unit": "bag", "type": "SALE", "notes": ""}}
 
-PIDGIN CONTEXT EXAMPLES:
-- "I don sell market" -> SALE
-- "I buy market" -> EXPENSE
-- "Customer neva pay" -> SALE (but mark notes as 'Pending')
-- "Waybill money" -> EXPENSE (item: 'Delivery/Waybill')
-- "Dash" -> EXPENSE (item: 'Gift/Discount')
+    PIDGIN CONTEXT EXAMPLES:
+    - "I don sell market" -> SALE
+    - "I buy market" -> EXPENSE
+    - "Customer neva pay" -> SALE (but mark notes as 'Pending')
+    - "Waybill money" -> EXPENSE (item: 'Delivery/Waybill')
+    - "Dash" -> EXPENSE (item: 'Gift/Discount')
 
-INPUT TO PROCESS:
-"{transcription_text}"
+    INPUT TO PROCESS:
+    "{transcription_text}"
 
-INSTRUCTIONS:
-- Return ONLY valid JSON.
-- if the unit is not mentioned, default to "item".
-- If the user uses 'k', convert it to thousands (e.g., 5k = 5000).
-- Categorize as SALE or EXPENSE.
-- Default quantity to 1 if the speaker does not mention one.
+    INSTRUCTIONS:
+    - Return ONLY valid JSON.
+    - if the unit is not mentioned, default to "item".
+    - If the user uses 'k', convert it to thousands (e.g., 5k = 5000).
+    - Categorize as SALE or EXPENSE.
+    - Default quantity to 1 if the speaker does not mention one.
 
-Return ONLY JSON in this format:
-{{"item": str, "amount": float, "quantity": int, "unit": str, "type": "SALE" | "EXPENSE", "notes": str}}
-"""
+    Return ONLY JSON in this format:
+    {{"item": str, "amount": float, "quantity": int, "unit": str, "type": "SALE" | "EXPENSE", "notes": str}}
+    """
 
     client = _get_client()
     chat_completion = client.chat.completions.create(

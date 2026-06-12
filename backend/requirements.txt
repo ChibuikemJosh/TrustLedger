@@ -11,3 +11,4 @@ redis==5.0.4
 numpy==1.26.4
 python-jose[cryptography]
 passlib==1.7.4
+firebase_admin>=7.4.0,<8.0.0
