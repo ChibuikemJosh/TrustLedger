@@ -1,16 +1,16 @@
 """
 Pydantic models for validation and documentation - TrustLedger Ecosystem
 """
-from pydantic import BaseModel, Field, field_validator, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Any, Dict
 import re
 
 
-class VoiceTransaction(BaseModel):
+class TransactionRequest(BaseModel):
     item: str = Field(..., description="The name of the item sold or expense incurred")
     amount: float = Field(..., gt=0, description="The cost in Naira (must be positive)")
     quantity: int = Field(default=1)
-    unit: str = Field(default="item", description="The unit of the item (e.g., 'kg', 'piece', bag, derica, paint, kg)")
+    unit: str = Field(default="item", description="The unit of the item (e.g., 'kg', 'piece', bag, derica, paint)")
     type: str = Field(..., pattern="^(SALE|EXPENSE|SUPPLIER_PAYMENT|CASUAL_LABOR_PAYOUT|LOGISTICS_DELIVERY)$")
     timestamp: Optional[str] = None
     notes: Optional[str] = "No additional notes"
@@ -21,58 +21,59 @@ class VoiceTransaction(BaseModel):
     product_id: Optional[str] = Field(None, description="Associated product inventory identification if matching a static QR scan")
     associated_phone: Optional[str] = Field(None, description="The OPay wallet phone number of the target worker or supplier paid")
 
-    verified: bool = False # Default to False until verified by Squad
-    is_anomaly: bool = False # Flag for potential fraud or errors, set by backend logic
+    verified: bool = False  # Default to False until verified by background webhooks
+    is_anomaly: bool = False  # Flag for potential fraud or errors, set by backend logic
 
-    @field_validator('amount', pre=True)
+    @field_validator('amount', mode='before')
+    @classmethod
     def ensure_float_amount(cls, v):
-        # In case the AI sends "5000" instead of 5000
+        """Standardizes messy input strings (like 'NGN 5,000' or '2.5k') into clean floats."""
         if isinstance(v, str):
-            # Strip NGN, commas, and handle 'k'
             clean_v = v.upper().replace("NGN", "").replace("NAIRA", "").replace(",", "").strip()
-            clean_v = re.sub(r'[^\d\.Kk]', '', clean_v) # Remove any non-numeric, non-dot, non-K characters
+            clean_v = re.sub(r'[^\d\.Kk]', '', clean_v)
             if 'K' in clean_v:
                 try:
-                    result = float(clean_v.replace("K", "")) * 1000
-                    return result
+                    return float(clean_v.replace("K", "")) * 1000.0
                 except ValueError:
-                    return 0.0 # Default to 0.0 if we can't parse it
+                    return 0.0
 
             try:
                 return float(clean_v)
             except ValueError:
-                return float(v) if v else 0.0
+                return float(v) if v.isdigit() else 0.0
 
         try:
             return float(v)
         except (TypeError, ValueError):
             return 0.0
             
-    @field_validator('quantity', pre=True)
+    @field_validator('quantity', mode='before')
+    @classmethod
     def ensure_int_quantity(cls, v):
-        """Ensures quantity is a clean integer, even if AI sends strings or floats."""
+        """Ensures quantity is a clean integer, even if AI sends unstructured text or floats."""
         if isinstance(v, str):
             try:
-                # Handle common textual numbers (Optional: add a dict for 'one','two', etc. if needed)
-                clean_v = v.strip().split()[0] # Take first part in case of "5 units"
+                clean_v = v.strip().split()[0]
                 return int(float(clean_v))
             except (ValueError, TypeError):
-                return 1 # Default to 1 if we can't parse it
-        if isinstance(v, float):
+                return 1  # Graceful fallback for non-numeric voice strings like 'a bag'
+        if isinstance(v, (int, float)):
             return int(v)
         return v
     
 
 class VoiceProcessResponse(BaseModel):
     status: str
-    transaction: Optional[VoiceTransaction] = None
+    transaction: Optional[TransactionRequest] = None
     message: Optional[str] = None
+
 
 class OCRProcessResponse(BaseModel):
     """Response model for OCR processing"""
     status: str
     extracted_data: Dict[str, Any]
     image_text: str
+
 
 class LocationSchema(BaseModel):
     city: str
@@ -89,29 +90,28 @@ class TierInfo(BaseModel):
 class UserCreate(BaseModel):
     id: str
     name: str
-    email: str # Added email
-    password: str # Added password
+    email: str 
+    password: str 
     role: str = Field(..., pattern="^(Merchant|Agent|Supplier)$")
     location: LocationSchema
-
-
-class UserProfile(BaseModel):
-    id: str = Field(..., description="Unique ID")
-    name: str
-    email: str
-    role: str = Field(..., pattern="^(Merchant|Agent|Supplier)$")
-    location: LocationSchema
-    trust_score: int = 50
-    tier: TierInfo
 
 
 class DashboardResponse(BaseModel):
-    profile: UserProfile
-    recent_transactions: list[VoiceTransaction]
+    """Matches the precise flat data layout returned by GraphService.get_user_dashboard."""
+    name: str
+    score: int = Field(50, alias="trust_score")
+    role: str
+    city: str
+    state: str
+    country: str
+    tier: TierInfo
+    transactions: List[TransactionRequest]
+
+    class Config:
+        populate_by_name = True
 
 
-# Response and Request models for Squad routes
-
+# Response and Request models for Squad/OPay gateway processing routes
 class ErrorResponse(BaseModel):
     status: str = "error"
     message: str
@@ -122,17 +122,18 @@ class ErrorResponse(BaseModel):
 class VirtualAccountRequest(BaseModel):
     merchant_id: str
     business_name: str
-    first_name: str = None
-    last_name: str = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     email: str
     phone: str
 
     @field_validator('phone')
+    @classmethod
     def validate_nigerian_phone(cls, v):
-        # Basic regex for Nigerian phone numbers (starts with +234 or 0, followed by 10 digits)
+        """Enforces clean structural phone tracking patterns before passing data downstream."""
         pattern = r'^(\+234|0)[789][01]\d{8}$'
-        if not re.match(pattern, v):
-            raise ValueError('Invalid Nigerian phone number format')
+        if not re.match(pattern, v.strip()):
+            raise ValueError('Invalid Nigerian phone number format. Must start with +234 or 0.')
         return v.strip()
 
 
@@ -145,7 +146,7 @@ class VirtualAccountResponse(BaseModel):
 
 
 class ProductQRRequest(BaseModel):
-    """Triggered when a merchant generates a static visual payment link card for a specific recurring market asset"""
+    """Triggered when a merchant generates a static visual payment link card for an asset."""
     merchant_id: str
     product_name: str
     price: float
@@ -157,42 +158,36 @@ class ProductQRResponse(BaseModel):
     product_id: str
     merchant_id: str
     price: float
-    # The actual ISO string payload that the frontend uses to draw the QR block on screen
     qr_code_payload: str  
     payment_reference: str
 
 
 class OPayWebhookPayload(BaseModel):
-    """
-    The secure backend JSON scheme used when OPay's background payment infrastructure 
-    notifies our FastAPI listener that an invoice or product QR has been successfully settled by a customer.
-    """
+    """OPay incoming webhook tracking object schema."""
     event: str = Field(..., description="e.g., payment.success or ORDER_COMPLETED")
     orderNo: str = Field(..., description="The unique OPay core execution number")
     reference: str = Field(..., description="Our internal application custom tracking reference string")
-    amount: Dict[str, Any] = Field(..., description="OPay structured asset amount object, e.g. {'currency': 'NGN', 'total': 80000}")
+    amount: Dict[str, Any] = Field(..., description="Structured currency mapping, e.g. {'currency': 'NGN', 'total': 80000}")
     status: str = Field(..., description="Final balance lifecycle state: SUCCESS, FAIL")
 
 
 class CasualLaborPayoutRequest(BaseModel):
-    """Fired when a merchant issues an outbound payment straight to a logistics provider (barrow pusher, delivery rider)"""
+    """Fired when a merchant issues an outbound payment straight to a logistics provider."""
     merchant_id: str
-    worker_phone: str = Field(..., description="Target target phone number acting as their OPay transfer endpoint")
+    worker_phone: str = Field(..., description="Target phone number acting as their transfer endpoint")
     amount: float
     narration: Optional[str] = "TrustLedger Logistics Payout"
 
 
 class FlashNotificationPayload(BaseModel):
-    """
-    Schema passed over our active WebSocket pipeline to fire real-time overlay notifications 
-    on the user interface whenever a payment settles, without requiring page refreshes.
-    """
+    """Real-time active WebSocket message payload schema."""
     type: str = "PAYMENT_FLASH"
     title: str = "Payment Confirmed!"
-    message: str  # e.g., "Received ₦80,000 from Segun Alao via Access Bank Scan"
+    message: str  
     reference: str
     amount: float
 
+
 class ChatRequest(BaseModel):
-    message: str | None = None
-    voice_path: str | None = None
+    message: Optional[str] = None
+    voice_path: Optional[str] = None
