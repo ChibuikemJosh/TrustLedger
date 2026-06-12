@@ -86,6 +86,27 @@ class TierInfo(BaseModel):
     color: str
     next_milestone: int
 
+class UserProfile(BaseModel):
+    """
+    Standard profile representation for profile updates, dependency injections,
+    and single-user configuration endpoints.
+    """
+    id: str = Field(..., description="The verified Firebase unique identifier (UID)")
+    name: str
+    email: str
+    role: str = Field(..., pattern="^(Merchant|Agent|Supplier)$")
+    location: Optional[LocationSchema] = None
+    trust_score: int = Field(43, description="Calculated systemic reputation index")
+    tier: Optional[TierInfo] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class UserProfileUpdateRequest(BaseModel):
+    """Used when a user wants to modify their profile data from the mobile/web application."""
+    name: Optional[str] = None
+    location: Optional[LocationSchema] = None
 
 class UserCreate(BaseModel):
     id: str
