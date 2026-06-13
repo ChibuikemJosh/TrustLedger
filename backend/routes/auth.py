@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 
 from schemas.schemas import UserCreate, UserProfile, TierInfo, LocationSchema
-from services.database import GraphService  # Fixed import location to match services folder
+from database.database import GraphService  # Fixed import location to match services folder
 from utils.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
