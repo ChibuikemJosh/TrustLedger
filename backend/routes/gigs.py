@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from schemas.schemas import CasualLaborPayoutRequest
-from services.database import GraphService
+from database.database import GraphService
 from utils.dependencies import get_current_user  # Aligned import dependency targets
 from datetime import datetime, timezone
 
