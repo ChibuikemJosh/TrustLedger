@@ -120,7 +120,7 @@ class UserCreate(BaseModel):
 class DashboardResponse(BaseModel):
     """Matches the precise flat data layout returned by GraphService.get_user_dashboard."""
     name: str
-    score: int = Field(50, alias="trust_score")
+    trust_score: int = Field(50, alias="score")
     role: str
     city: str
     state: str
