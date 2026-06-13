@@ -12,6 +12,7 @@ from routes.transactions import router as tx_router
 from routes.gigs import router as gigs_router
 from routes.ai import router as ai_router
 from routes.chat import router as chat_router
+from routes.health import router as health_router  # Imported the dedicated health checking router
 
 from database.database import GraphService
 
@@ -45,16 +46,8 @@ async def startup_event():
     else:
         logger.warning("Neo4j database cluster is currently unreachable.")
 
-@app.get("/health", tags=["System Utility"])
-async def system_health_check():
-    """Simple health check endpoint for deployment monitoring."""
-    return {
-        "status": "healthy",
-        "system": "TrustLedger Core Infrastructure Engine",
-        "timestamp_year": 2026
-    }
-
 # Structural Routing Dispatches
+app.include_router(health_router, prefix="/health")  # Mounted deep health checks to /health
 app.include_router(auth_router, prefix="/auth")
 app.include_router(tx_router, prefix="/transactions")
 app.include_router(gigs_router, prefix="/gigs")
