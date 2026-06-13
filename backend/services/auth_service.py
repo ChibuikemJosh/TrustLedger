@@ -1,10 +1,13 @@
+"""
+Firebase Authentication Service Integration
+Handles cryptographic validation of Google Firebase JSON Web Tokens (JWT).
+"""
 import firebase_admin
 from firebase_admin import credentials, auth
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
 
-# Initialize Firebase Admin SDK (reads from your serviceAccountKey.json)
 if not firebase_admin._apps:
     cred = credentials.Certificate(os.getenv("FIREBASE_CREDENTIALS_PATH", "serviceAccountKey.json"))
     firebase_admin.initialize_app(cred)
@@ -13,17 +16,16 @@ security = HTTPBearer()
 
 def verify_firebase_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> dict:
     """
-    Validates the incoming Firebase ID token sent from the frontend.
-    Extracts the user's Firebase UID and profile data.
+    Validates the incoming Firebase ID token sent from the frontend mobile/web client.
+    Normalizes keys to 'id' to match downstream route expectations seamlessly.
     """
     token = credentials.credentials
     try:
-        # Decodes and verifies the token using Google's public certificates
         decoded_token = auth.verify_id_token(token)
         return {
-            "uid": decoded_token["uid"],
-            "email": decoded_token.get("email"),
-            "name": decoded_token.get("name")
+            "id": decoded_token["uid"],  # Normalized explicitly to avoid key crashes
+            "email": decoded_token.get("email", ""),
+            "name": decoded_token.get("name", "Market Trader")
         }
     except Exception as e:
         raise HTTPException(
