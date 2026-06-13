@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from schemas.schemas import ChatRequest, ErrorResponse
 from services.ai_logic import transcribe_audio, _get_client
-from services.database import GraphService  # Fixed import path
+from database.database import GraphService  # Fixed import path
 from utils.dependencies import get_current_user
 
 router = APIRouter(tags=["AI Conversational Analytics"])
