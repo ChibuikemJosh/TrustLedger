@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks,
 # Core AI & Service utilities
 from services.ai_logic import process_voice_entry, update_job_status, get_job_status
 from services.ocr_logic import process_ledger_image_v2 
-from services.database import GraphService  # Fixed import path
+from database.database import GraphService  # Fixed import path
 
 from utils.helpers import save_temp_file
 from utils.dependencies import get_current_user
