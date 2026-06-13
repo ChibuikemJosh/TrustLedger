@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Dict, Any
 
 from services.ai_logic import update_job_status, get_job_status
-from services.database import GraphService  # Corrected absolute folder import path
+from database.database import GraphService  # Corrected absolute folder import path
 
 logger = logging.getLogger(__name__)
 
