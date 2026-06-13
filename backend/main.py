@@ -13,7 +13,7 @@ from routes.gigs import router as gigs_router
 from routes.ai import router as ai_router
 from routes.chat import router as chat_router
 
-from services.database import GraphService
+from database.database import GraphService
 
 logging.basicConfig(
     level=logging.INFO,
