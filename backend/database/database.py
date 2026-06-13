@@ -351,6 +351,45 @@ class GraphService:
             session.execute_write(self._commit_user_score, user_id, new_score)
             return new_score
 
+    # --- MANUAL TRANSACTION UPDATES & AUDITING ---
+    def check_if_verified(self, tx_id: str) -> bool:
+        """Checks if a transaction has already been locked and verified by an OPay webhook."""
+        query = """
+        MATCH (t:Transaction {id: $tx_id})
+        RETURN coalesce(t.verified, false) as verified
+        """
+        with self.get_session() as session:
+            result = session.execute_read(lambda tx: tx.run(query, tx_id=tx_id).single())
+            if not result:
+                return False
+            return result["verified"]
+
+    def update_transaction_node(self, tx_id: str, tx_data: dict) -> bool:
+        """Updates mutable properties of an unverified transaction ledger item."""
+        query = """
+        MATCH (t:Transaction {id: $tx_id})
+        SET t.item = $item,
+            t.amount = $amount,
+            t.quantity = $quantity,
+            t.unit = $unit,
+            t.notes = $notes
+        RETURN t.id as id
+        """
+        with self.get_session() as session:
+            result = session.execute_write(
+                lambda tx: tx.run(
+                    query,
+                    tx_id=tx_id,
+                    item=tx_data.get('item'),
+                    amount=tx_data.get('amount'),
+                    quantity=tx_data.get('quantity'),
+                    unit=tx_data.get('unit'),
+                    notes=tx_data.get('notes')
+                ).single()
+            )
+            return result is not None
+
+
     # --- DATA UTILITY METHODS ---
     @staticmethod
     def _get_user_history_nodes(tx, user_id: str) -> list:
