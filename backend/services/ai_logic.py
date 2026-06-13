@@ -17,8 +17,9 @@ from schemas.schemas import TransactionRequest
 http_client = httpx.Client()
 load_dotenv()
 
-# Connect to local Redis configuration instance pool
-r = redis.Redis(host=os.getenv("REDIS_HOST", "localhost"), port=6379, decode_responses=True)
+# Connect using the unified REDIS_URL environment variable (Works on local dev and Render)
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+r = redis.Redis.from_url(redis_url, decode_responses=True)
 
 
 def update_job_status(job_id: str, status: str, data: Optional[Any] = None):
@@ -66,7 +67,7 @@ def transcribe_audio(file_path: str) -> str:
         file_path = file_path.strip('"') or ""
         if not file_path.endswith(('.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mpeg', '.mpga', '.mp4', '.webm')):
             raise Exception("Unsupported mobile audio encoding wrapper type format.")
-            
+
         with open(file_path, "rb") as file:
             transcription = client.audio.transcriptions.create(
                 file=(file_path, file.read()),
