@@ -1,8 +1,9 @@
 import { Transaction, UserProfile, UserRole, UnitMeasure, AsyncJob, ChatMessage } from "./types";
 
-const BACKEND_BASE_URL = (import.meta as any).env?.VITE_BACKEND_BASE_URL || "https://trustledger-1.onrender.com";
+// Explicitly defaults to your live production Render API cluster gateway path
+const BACKEND_BASE_URL = "https://trustledger-1.onrender.com";
 
-// In-Memory Simulated Database for when the rendering environment cannot reach the backend (CORS or Off/Sleeping)
+// --- IN-MEMORY LOCAL DATA ENGINE ---
 class LocalStateStore {
   user: UserProfile | null = null;
   transactions: Transaction[] = [];
@@ -14,7 +15,6 @@ class LocalStateStore {
   }
 
   seedInitialData() {
-    // Standard starting transactions for a classic Nigerian trader:
     this.transactions = [
       {
         tx_id: "tx-101",
@@ -60,7 +60,7 @@ class LocalStateStore {
         unit_measure: "bag",
         direction: "SALE",
         context_notes: "Suspicious hyper-inflated invoice pricing.",
-        is_anomaly: true, // TRIGGER CONDITION 1
+        is_anomaly: true, 
         verified: false,
         timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toLocaleString("en-NG", { hour12: true })
       },
@@ -82,7 +82,7 @@ class LocalStateStore {
       {
         id: "msg-1",
         sender: "bot",
-        text: "Aba! Long-time no see! I be your TrustLedger Bookkeeper. drop your manual books and ask me anything in clean Pidgin or English. E.g. 'How much did Iya Basirat buy?' or 'Analyze my rice stock dynamics.' "
+        text: "Aba! Long-time no see! I be your TrustLedger Bookkeeper. Drop your manual books and ask me anything in clean Pidgin or English. E.g. 'How much did Iya Basirat buy?' or 'Analyze my rice stock dynamics.' "
       }
     ];
   }
@@ -113,16 +113,17 @@ interface RequestOptions {
   isFormData?: boolean;
 }
 
-// Global fetch helper that automatically appends Bearer Token
+// Global production fetch pipeline wrapper
 async function apiCall(endpoint: string, options: RequestOptions = {}, token: string | null): Promise<any> {
   const url = `${BACKEND_BASE_URL}${endpoint}`;
   const method = options.method || "GET";
-  
   const headers: Record<string, string> = { ...options.headers };
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
+
+  // CRITICAL: Content-Type must not be typed if loading FormData, allowing dynamic boundary mapping
   if (!options.isFormData && options.body) {
     headers["Content-Type"] = "application/json";
   }
@@ -136,24 +137,20 @@ async function apiCall(endpoint: string, options: RequestOptions = {}, token: st
     fetchOptions.body = options.isFormData ? options.body : JSON.stringify(options.body);
   }
 
-  console.log(`[API REQUEST] => ${method} ${url}`, fetchOptions.body);
-  
-  try {
-    const res = await fetch(url, fetchOptions);
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`API returned ${res.status}: ${errorText}`);
-    }
-    return await res.json();
-  } catch (error) {
-    console.warn(`[API ERROR] calling ${url}. Falling back to high-fidelity sandboxed local emulation state.`, error);
-    throw error; // Propagate the error so calling components know, but can choose to fallback
+  console.log(`[API REQUEST] => ${method} ${url}`);
+
+  const res = await fetch(url, fetchOptions);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`API returned ${res.status}: ${errorText}`);
   }
+  return await res.json();
 }
 
-// COMPONENT-LEVEL NETWORKING SYSTEM
+// --- SECURE OUTBOUND ENDPOINT ROUTER LAYER ---
 export const TrustLedgerAPI = {
-  // 1. Splash registration onboarding syncing
+  
+  // 1. Screen 1 Registration sync
   async syncOnboarding(
     payload: { name: string; email: string; role: UserRole; location: { city: string; state: string; country: string } },
     token: string | null
@@ -163,46 +160,32 @@ export const TrustLedgerAPI = {
         method: "POST",
         body: payload
       }, token);
-      
-      // Update local storage representation
+
       localStore.user = {
         ...serverResponse,
-        trust_score: serverResponse.trust_score || 55 // fallbacks
+        trust_score: serverResponse.trust_score || 55
       };
       return localStore.user!;
-    } catch {
-      // Sandbox fallback - sync the localStore details
-      console.log("[SANDBOX ACTIVE] - Simulating syncOnboarding");
-      const user = localStore.syncUser(payload.name, payload.email, payload.role, 55); // start with 55 ("Growing Node")
-      return user;
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
+      return localStore.syncUser(payload.name, payload.email, payload.role, 55);
     }
   },
 
-  // 2. Fetch Core Dashboard
+  // 2. Screen 2 Dashboard sync
   async fetchDashboard(token: string | null): Promise<{ user: UserProfile; transactions: Transaction[] }> {
     try {
       const data = await apiCall("/transactions/dashboard", { method: "GET" }, token);
+
+      if (data && data.user) localStore.user = data.user;
+      if (data && data.transactions) localStore.transactions = data.transactions;
       
-      if (data && data.user) {
-        localStore.user = data.user;
-      }
-      if (data && data.transactions) {
-        localStore.transactions = data.transactions;
-      }
       return {
-        user: localStore.user || {
-          uid: "usr-default",
-          name: "Chinedu Okafor",
-          email: "chinedu@example.com",
-          role: "Merchant",
-          location: { city: "Lagos", state: "Lagos State", country: "Nigeria" },
-          trust_score: 82
-        },
+        user: localStore.user!,
         transactions: localStore.transactions
       };
-    } catch {
-      // Sandbox fallback
-      console.log("[SANDBOX ACTIVE] - Simulating fetchDashboard");
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       if (!localStore.user) {
         localStore.syncUser("Chinedu Okafor", "egbuchirichibuikem3@gmail.com", "Merchant", 82);
       }
@@ -213,19 +196,20 @@ export const TrustLedgerAPI = {
     }
   },
 
-  // 3. Quick Voice Log processing submission
+  // 3. Screen 3 Voice log multipart pipeline
   async processVoice(file: File, token: string | null): Promise<{ job_id: string; status: string }> {
     try {
       const formData = new FormData();
+      // Explicit binary key parameter string mapping expected by FastAPI dependency models
       formData.append("file", file, file.name || "nigerian_market_voice_log.wav");
-      const res = await apiCall("/ai/process-voice", {
+      
+      return await apiCall("/ai/process-voice", {
         method: "POST",
         body: formData,
         isFormData: true
       }, token);
-      return res;
-    } catch {
-      // Sandbox simulation
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       const randomJobId = "job-voice-" + Math.floor(Math.random() * 100000);
       localStore.jobs[randomJobId] = {
         job_id: randomJobId,
@@ -239,31 +223,28 @@ export const TrustLedgerAPI = {
           context_notes: "Simulated speech extraction: 'Sold four crates of cassava flour for thirty two thousand Naira.'"
         }
       };
-      
-      // Setup a timer to simulate completed status background change
+
       setTimeout(() => {
-        if (localStore.jobs[randomJobId]) {
-          localStore.jobs[randomJobId].status = "completed";
-        }
+        if (localStore.jobs[randomJobId]) localStore.jobs[randomJobId].status = "completed";
       }, 5000);
 
       return { job_id: randomJobId, status: "accepted" };
     }
   },
 
-  // 4. Scan Ledger snap snapshot submission
+  // 4. Screen 3 Ledger paper image multipart pipeline
   async processLedger(file: File, token: string | null): Promise<{ job_id: string; status: string }> {
     try {
       const formData = new FormData();
       formData.append("file", file, file.name || "custom_upload_ledger.png");
-      const res = await apiCall("/ai/process-ledger", {
+      
+      return await apiCall("/ai/process-ledger", {
         method: "POST",
         body: formData,
         isFormData: true
       }, token);
-      return res;
-    } catch {
-      // Sandbox simulation
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       const randomJobId = "job-ledger-" + Math.floor(Math.random() * 100000);
       localStore.jobs[randomJobId] = {
         job_id: randomJobId,
@@ -277,39 +258,35 @@ export const TrustLedgerAPI = {
           context_notes: "Simulated paper ledger scan: 'Diesel purchase receipt of forty five thousand NGN.'"
         }
       };
-      
-      // Timer to simulate processing complete (2 seconds longer)
+
       setTimeout(() => {
-        if (localStore.jobs[randomJobId]) {
-          localStore.jobs[randomJobId].status = "completed";
-        }
+        if (localStore.jobs[randomJobId]) localStore.jobs[randomJobId].status = "completed";
       }, 4000);
 
       return { job_id: randomJobId, status: "accepted" };
     }
   },
 
-  // 5. Poll Async Background processing Job Status
+  // 5. Screen 3 Background queue status worker loop
   async fetchJobStatus(jobId: string, token: string | null): Promise<AsyncJob> {
     try {
       return await apiCall(`/ai/status/${jobId}`, { method: "GET" }, token);
-    } catch {
-      // Sandbox simulation lookup
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       return localStore.jobs[jobId] || { job_id: jobId, status: "failed", error: "Job ID not tracked in memory" };
     }
   },
 
-  // 6. Confirm and Lock a Transaction State
+  // 6. Verification drawer commit processing layer
   async confirmTransaction(transaction: Partial<Transaction>, token: string | null, manualMode = false): Promise<any> {
     const endpoint = manualMode ? "/transactions/log" : "/ai/confirm-transaction";
     try {
-      const res = await apiCall(endpoint, {
+      return await apiCall(endpoint, {
         method: "POST",
         body: transaction
       }, token);
-      return res;
-    } catch {
-      // Sandbox simulation state mutation
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       const verifiedTx: Transaction = {
         tx_id: "tx-" + Math.floor(Math.random() * 10000),
         item_name: transaction.item_name || "New Ledger Item",
@@ -319,29 +296,27 @@ export const TrustLedgerAPI = {
         direction: transaction.direction || "SALE",
         context_notes: transaction.context_notes || "Manually saved sandbox state",
         is_anomaly: false,
-        verified: manualMode ? false : true, // confirm-transaction marks verified
+        verified: !manualMode, 
         timestamp: new Date().toLocaleString("en-NG", { hour12: true })
       };
       localStore.transactions = [verifiedTx, ...localStore.transactions];
-      
-      // Update User Trust Score as visual feedback!
+
       if (localStore.user) {
-        localStore.user.trust_score = Math.min(100, localStore.user.trust_score + 2); // incremental success
+        localStore.user.trust_score = Math.min(100, localStore.user.trust_score + 2);
       }
       return { status: "success", transaction: verifiedTx };
     }
   },
 
-  // 7. Update an Unverified Transaction State (PUT)
+  // 7. Screen 4 Unverified transaction item mutator
   async updateTransaction(txId: string, payload: Partial<Transaction>, token: string | null): Promise<any> {
     try {
-      const res = await apiCall(`/transactions/update/${txId}`, {
+      return await apiCall(`/transactions/update/${txId}`, {
         method: "PUT",
         body: payload
       }, token);
-      return res;
-    } catch {
-      // Sandbox simulation UPDATE
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       localStore.transactions = localStore.transactions.map((t) => {
         if (t.tx_id === txId) {
           return {
@@ -358,22 +333,21 @@ export const TrustLedgerAPI = {
     }
   },
 
-  // 8. Interactive Conversational Pidgin Analytics Chat Core
+  // 8. Screen 5 AI Pidgin Chat Advisor Hub (Enforces clean trailing slash pattern match)
   async sendChatMessage(message: string, token: string | null): Promise<{ answer: string; compiled_cypher: string }> {
     try {
-      const res = await apiCall("/chat", {
+      return await apiCall("/chat/", {
         method: "POST",
         body: { message, voice_path: null }
       }, token);
-      return res;
-    } catch {
-      // Sandbox fallback answering based on text queries in Nigeria Pidgin
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       let answer = "";
       let compiled_cypher = `MATCH (m:Merchant {uid: $user_id})-[:LOGGED]->(t:Transaction)\nWHERE t.direction = "SALE"\nRETURN sum(t.amount) as total_sales`;
 
       const q = message.toLowerCase();
       if (q.includes("iya") || q.includes("basirat")) {
-        answer = "Ahn-ahn! Iya Basirat transact sharp-sharp! She buy total of 12 bags of Yellow Maize Cocoa Cargo on Mile 12 Market, total volume value reach ₦145,000 NGN. Record dey verified fully webhook reference standard.";
+        answer = "Ahn-ahn! Description trace clear well. Iya Basirat buy total of 12 bags of Yellow Maize Cocoa Cargo on Mile 12 Market, total volume value reach ₦145,000 NGN. Record dey verified fully webhook reference standard.";
         compiled_cypher = `MATCH (m:Merchant)-[:TRANSACTED_WITH]->(c:Counterparty {name: "Iya Basirat"})\nMATCH (c)-[:RECEIVED]->(t:Transaction)\nRETURN t.item_name, t.amount`;
       } else if (q.includes("cocoa") || q.includes("cargo")) {
         answer = "Your cocoa records clear well-well. You get yellow maize cocoa cargo worth ₦145,000 NGN. The storage sacks also consume ₦12,500 NGN as expense record.";
@@ -392,21 +366,19 @@ export const TrustLedgerAPI = {
     }
   },
 
-  // 9. Casual Labor Payout & Workforce Settlement Hub
+  // 9. Screen 6 Casual labor payout workspace pipeline
   async triggerPayout(payload: { worker_phone: string; amount: number; narration: string }, token: string | null): Promise<{ status: string; reputation_metric: number }> {
     try {
-      const res = await apiCall("/gigs/payout", {
+      return await apiCall("/gigs/payout", {
         method: "POST",
         body: payload
       }, token);
-      return res;
-    } catch {
-      // Sandbox simulation response
+    } catch (err) {
+      console.warn("[API ERROR] falling back to high-fidelity sandboxed local emulation state.", err);
       if (localStore.user) {
-        localStore.user.trust_score = Math.min(100, localStore.user.trust_score + 5); // payouts significantly improve trust!
+        localStore.user.trust_score = Math.min(100, localStore.user.trust_score + 5); 
       }
-      
-      // Register it as an expense transaction too!
+
       const gigTx: Transaction = {
         tx_id: "payout-" + Math.floor(Math.random() * 10000),
         item_name: `Workforce settlement: ${payload.narration}`,
