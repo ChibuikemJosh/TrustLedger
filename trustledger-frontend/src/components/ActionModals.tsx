@@ -11,20 +11,36 @@ export function VoiceLoggingModal({ isOpen, onClose, onTriggerJob }: VoiceModalP
   const [recording, setRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [submitted, setSubmitted] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // FIXED: Changed from NodeJS.Timeout to number to resolve cross-platform Vite build compilation targets
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (recording) {
-      timerRef.current = setInterval(() => {
+      timerRef.current = window.setInterval(() => {
         setDuration((prev) => prev + 1);
       }, 1000);
     } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+      }
     };
   }, [recording]);
+
+  // Reset local state if modal visibility drops
+  useEffect(() => {
+    if (!isOpen) {
+      setRecording(false);
+      setDuration(0);
+      setSubmitted(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -37,16 +53,19 @@ export function VoiceLoggingModal({ isOpen, onClose, onTriggerJob }: VoiceModalP
   const stopAndSubmit = () => {
     setRecording(false);
     setSubmitted(true);
-    
-    // Generate a simulated .wav / .mp3 file
+
     const mockFile = new File(["dummy raw speech binary data"], "nigerian_market_voice_log.wav", {
       type: "audio/wav"
     });
-    
+
     onTriggerJob(mockFile);
-    setTimeout(() => {
+    
+    // Safety check on closure timeout
+    const closeTimeout = setTimeout(() => {
       onClose();
     }, 1500);
+
+    return () => clearTimeout(closeTimeout);
   };
 
   const getPresetPhrases = () => {
@@ -88,7 +107,8 @@ export function VoiceLoggingModal({ isOpen, onClose, onTriggerJob }: VoiceModalP
                 key={i}
                 className="w-1 bg-[#0EBD2B] rounded-full transition-all duration-150 animate-bounce"
                 style={{
-                  height: `${Math.random() * 40 + 10}px`
+                  height: `${Math.random() * 40 + 10}px`,
+                  animationDelay: `${i * 0.1}s` // Fixed: smoother progressive ripple animation wave
                 }}
               ></span>
             ))
@@ -147,7 +167,7 @@ export function VoiceLoggingModal({ isOpen, onClose, onTriggerJob }: VoiceModalP
                     stopAndSubmit();
                   }, 1200);
                 }}
-                className="text-[10px] font-mono text-left block w-full px-2.5 py-1.5 bg-gray-950 hover:bg-gray-900 border border-gray-900 rounded text-gray-400 hover:text-white transition-all lines-clamp-1"
+                className="text-[10px] font-mono text-left block w-full px-2.5 py-1.5 bg-gray-950 hover:bg-gray-900 border border-gray-900 rounded text-gray-400 hover:text-white transition-all truncate"
               >
                 {ph}
               </button>
@@ -166,25 +186,31 @@ interface LedgerModalProps {
 }
 
 export function ScanLedgerModal({ isOpen, onClose, onTriggerJob }: LedgerModalProps) {
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Clear upload blocker when visibility state resets
+  useEffect(() => {
+    if (!isOpen) {
+      setUploading(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (templateType: string, customFile?: File) => {
-    setSelectedTemplate(templateType);
     setUploading(true);
 
-    // Capture the raw file object or generate a high-fidelity template representation
     const fileToUpload = customFile || new File(["dummy ocr image binary text"], `${templateType}_ledger_receipt.png`, {
       type: "image/png"
     });
 
-    setTimeout(() => {
+    const submitTimeout = setTimeout(() => {
       onTriggerJob(fileToUpload);
       setUploading(false);
       onClose();
     }, 1500);
+
+    return () => clearTimeout(submitTimeout);
   };
 
   return (
@@ -211,7 +237,7 @@ export function ScanLedgerModal({ isOpen, onClose, onTriggerJob }: LedgerModalPr
           </div>
         </div>
 
-        {/* Drag and Drop Simulator Box */}
+        {/* Drag and Drop Box */}
         <div className="p-8 border-2 border-dashed border-white/5 hover:border-[#0EBD2B]/30 bg-black/30 rounded-xl text-center mb-6 transition-all group relative cursor-pointer font-sans">
           <input
             type="file"
@@ -232,7 +258,7 @@ export function ScanLedgerModal({ isOpen, onClose, onTriggerJob }: LedgerModalPr
           </div>
         </div>
 
-        {/* Demo Templates selects */}
+        {/* Demo Templates */}
         <div>
           <span className="text-[10px] font-mono tracking-wider uppercase text-[#0EBD2B] block mb-3 font-bold">
             Or select a premium trader paper bill sample to simulate OCR:
@@ -273,7 +299,7 @@ export function ScanLedgerModal({ isOpen, onClose, onTriggerJob }: LedgerModalPr
               UPLOADING HIGH-RES BINARY TEXT INDEX...
             </div>
             <div className="text-[10px] text-white/40 font-mono mt-1">
-              Establishing token context encryption for secure Fast API payload
+              Establishing token context encryption for secure FastAPI payload
             </div>
           </div>
         )}
