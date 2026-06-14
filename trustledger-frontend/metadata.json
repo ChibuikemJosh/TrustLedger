@@ -1,0 +1,6 @@
+{
+  "name": "TrustLedger Frontend",
+  "description": "Premium high-fidelity system engine for Nigerian market traders, featuring a circular trust HUD, real-time transaction polling, AI-powered Pidgin bookkeeping chat, and cash workforce settlement control.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

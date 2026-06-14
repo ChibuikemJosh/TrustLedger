@@ -1,0 +1,9 @@
+{
+  "apiKey": "mock_api_key_trustledger_nigeria_2026",
+  "authDomain": "trustledger-1.firebaseapp.com",
+  "projectId": "trustledger-1",
+  "storageBucket": "trustledger-1.appspot.com",
+  "messagingSenderId": "1029384756",
+  "appId": "1:1029384756:web:8cfa823bc091dd",
+  "firestoreDatabaseId": "(default)"
+}

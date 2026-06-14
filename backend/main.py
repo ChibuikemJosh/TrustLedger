@@ -2,7 +2,10 @@
 TrustLedger Core Execution Engine
 Main entry point orchestrating structural routing modules, global CORS filters, and pool connections.
 """
+import os
+import json
 import logging
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,6 +18,29 @@ from routes.chat import router as chat_router
 from routes.health import router as health_router  # Imported the dedicated health checking router
 
 from database.database import GraphService
+
+load_dotenv()  # Load environment variables from .env file
+
+# 2. CRITICAL FIX: Explicitly initialize the default Firebase App globally right here!
+if not firebase_admin._apps:
+    fb_json = os.getenv("FIREBASE_CONFIG_JSON_STRING")
+    if fb_json:
+        try:
+            # Parse the direct key string from Render's dashboard environment variables
+            cred_dict = json.loads(fb_json)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            logging.info("Firebase Admin SDK initialized successfully via Config String.")
+        except Exception as e:
+            logging.error(f"Failed to parse FIREBASE_CONFIG_JSON_STRING: {str(e)}")
+    else:
+        # Fallback for your local file workspace configuration
+        if os.path.exists("serviceAccountKey.json"):
+            cred = credentials.Certificate("serviceAccountKey.json")
+            firebase_admin.initialize_app(cred)
+            logging.info("Firebase Admin SDK initialized successfully via local JSON file.")
+        else:
+            logging.critical("CRITICAL: No Firebase configuration credentials found!")
 
 logging.basicConfig(
     level=logging.INFO,
