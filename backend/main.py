@@ -8,6 +8,8 @@ import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import firebase_admin
+from firebase_admin import credentials
 
 # Resource Routing Closures
 from routes.auth import router as auth_router
