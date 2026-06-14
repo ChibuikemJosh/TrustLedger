@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { auth } from "./firebase"; // Real, live client initialization hook
 import { UserProfile, Transaction, AsyncJob } from "./types";
 import { TrustLedgerAPI } from "./api";
-import { mockAuthInstance } from "./firebase";
+
+// --- CORE APP MODULE IMPORTS ---
 import SplashView from "./components/SplashView";
 import DashboardView from "./components/DashboardView";
 import TimelineAuditView from "./components/TimelineAuditView";
@@ -10,6 +13,8 @@ import CasualLaborHub from "./components/CasualLaborHub";
 import ManualEntryDrawer from "./components/ManualEntryDrawer";
 import BackgroundJobTracker from "./components/BackgroundJobTracker";
 import { VoiceLoggingModal, ScanLedgerModal } from "./components/ActionModals";
+
+// --- THEME ICON MATRIX ---
 import {
   ShieldAlert,
   Server,
@@ -19,119 +24,131 @@ import {
   Users,
   LogOut,
   Sparkles,
-  CheckCircle,
-  HelpCircle,
-  AlertTriangle,
-  FileText
+  CheckCircle
 } from "lucide-react";
 
 export default function App() {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  // Live State Machine Drivers
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeTab, setActiveTab] = useState<"dashboard" | "audit" | "chat" | "labor">("dashboard");
 
-  // Loading and Polling state
-  const [loading, setLoading] = useState(false);
+  // Telemetry, Pipeline & Diagnostics States
+  const [initializing, setInitializing] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
-  // Foreground Job extraction tracker (Screen 3)
+  // Screen 3 Floating Pipeline Worker Hook Anchor
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
-  // Modals & Drawers controls
-  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
-  const [isLedgerOpen, setIsLedgerOpen] = useState(false);
-  const [isManualOpen, setIsManualOpen] = useState(false);
-  
-  // Selected transaction for edit (Condition 3)
+  // Overlay Drawers View Layer toggles
+  const [isVoiceOpen, setIsVoiceOpen] = useState<boolean>(false);
+  const [isLedgerOpen, setIsLedgerOpen] = useState<boolean>(false);
+  const [isManualOpen, setIsManualOpen] = useState<boolean>(false);
+
+  // Condition 3 Selection Data Store Matrix
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  // 1. Monitor auth state and run heartbeat check
+  // 1. MONITOR AUTHENTICATION STATE & PULL REAL SECURE CRYTOGRAPHIC TOKENS
   useEffect(() => {
-    const unsubscribe = mockAuthInstance.onAuthStateChanged(async (currentUser: any) => {
-      if (currentUser) {
-        setUser(currentUser);
-        setToken(currentUser.token);
-        // Initial dashboard refresh
-        loadDashboard(currentUser.token);
+    const unsubscribe = onAuthStateChanged(auth, async (userInstance) => {
+      setInitializing(true);
+      if (userInstance) {
+        try {
+          // Force fetch clean production signed token string directly from Google Auth Node
+          const secureToken = await userInstance.getIdToken(true);
+          setFirebaseUser(userInstance);
+          setToken(secureToken);
+          
+          // Execute Initial Synchronized Load Strategy
+          await loadDashboard(secureToken);
+        } catch (err) {
+          console.error("Token verification error setup:", err);
+          setErrorText("Security context assignment failed.");
+        }
       } else {
-        setUser(null);
+        // Purge memory cache frames upon authorization termination
+        setFirebaseUser(null);
+        setProfile(null);
         setToken(null);
         setTransactions([]);
       }
+      setInitializing(false);
     });
 
-    // Check backend heartbeat
     checkBackendHeartbeat();
-
     return () => unsubscribe();
   }, []);
 
-  // 2. Active Sync long-polling pipeline requirements (Screen 2)
+  // 2. ACTIVE LONG-POLLING RUNTIME SCHEDULER (5-SECOND STATE MATRIX SYNCHRONIZER)
   useEffect(() => {
     if (!token) return;
 
-    // Synchronized pipeline checking server endpoint every 10 seconds for layout state updates
     const dashboardPoll = setInterval(() => {
       console.log("[POLLING PIPELINE] Syncing /transactions/dashboard...");
-      loadDashboard(token, true); // silent reload
-    }, 10000);
+      loadDashboard(token, true); // True flag executes continuous silent pipeline reload
+    }, 5000);
 
     return () => clearInterval(dashboardPoll);
   }, [token]);
 
   const checkBackendHeartbeat = async () => {
     try {
-      const res = await fetch("https://trustledger-1.onrender.com/transactions/dashboard", {
+      await fetch("https://trustledger-1.onrender.com/transactions/dashboard", {
         method: "HEAD"
       });
       setApiOnline(true);
     } catch {
-      setApiOnline(false); // offline / CORS restricted
+      setApiOnline(false);
     }
   };
 
   const loadDashboard = async (authToken: string | null, silent = false) => {
+    if (!authToken) return;
     if (!silent) setLoading(true);
     try {
       const data = await TrustLedgerAPI.fetchDashboard(authToken);
       if (data.user) {
-        setUser(data.user);
+        setProfile(data.user);
       }
-      setTransactions(data.transactions);
-    } catch (err: any) {
-      console.error("Dashboard synchronization error:", err);
-      setErrorText("API Server CORS error or Sleeping. Operating inside fully autonomous Local Gateway Simulation.");
+      setTransactions(data.transactions || []);
+    } catch (err) {
+      console.error("Dashboard core infrastructure alignment error:", err);
+      setErrorText("API connection timed out. Sync failure detected.");
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    await mockAuthInstance.signOut();
+    try {
+      await signOut(auth);
+    } catch (err) {
+      setErrorText("Session sign-out mutation error.");
+    }
   };
 
-  // Submit manual ledger entry OR confirm compiled verification sheet (Screen 3)
+  // 3. SECURE MUTATION LOGS HANDLERS (SCREEN 3 ENGINE MECHANICS)
   const handleLedgerSubmission = async (txData: Partial<Transaction>) => {
     try {
       const isManual = !editingTransaction && !activeJobId;
-      const res = await TrustLedgerAPI.confirmTransaction(txData, token, isManual);
-      
-      setSuccessToast(`Success: Committed "${txData.item_name}" to graph securely!`);
+      await TrustLedgerAPI.confirmTransaction(txData, token, isManual);
+
+      setSuccessToast(`Success: Committed "${txData.item_name}" to ledger graph securely!`);
       setIsManualOpen(false);
       setEditingTransaction(null);
       setActiveJobId(null);
 
-      // Refresh dashboard state
-      loadDashboard(token);
+      await loadDashboard(token);
     } catch {
-      setErrorText("Transaction submission index sync error.");
+      setErrorText("Transaction pipeline submission sync rejection error.");
     }
   };
 
-  // Triggered when editing unverified state (Condition 3)
   const handleEditMutation = async (txData: Partial<Transaction>) => {
     if (!txData.tx_id) return;
     try {
@@ -140,10 +157,9 @@ export default function App() {
       setIsManualOpen(false);
       setEditingTransaction(null);
 
-      // Refresh dashboard state
-      loadDashboard(token);
+      await loadDashboard(token);
     } catch {
-      setErrorText("Transaction mutation edit request failed.");
+      setErrorText("Transaction target mutation request failed.");
     }
   };
 
@@ -152,32 +168,26 @@ export default function App() {
     setIsManualOpen(true);
   };
 
-  // Job status callbacks (Screen 3)
   const handleJobCompleted = (completedJob: AsyncJob) => {
     if (completedJob.extracted_data) {
-      // Pre-populate sheet and trigger drawer modal
       setEditingTransaction(completedJob.extracted_data as Transaction);
       setIsManualOpen(true);
     }
-    setSuccessToast("Ledger media analyze complete! Please verify extraction parameters.");
+    setSuccessToast("Ledger media extraction complete! Verification sheet loaded.");
   };
 
-  const handleJobFailed = (failedJobId: string, errorText: string) => {
-    setErrorText(`Cyber extraction failure: ${errorText}`);
+  const handleJobFailed = (failedJobId: string, errorDescription: string) => {
+    setErrorText(`Cyber extraction pipeline failure: ${errorDescription}`);
   };
 
   const notifyPayoutScoreUpdate = (updatedScore: number) => {
-    if (user) {
-      setUser({
-        ...user,
-        trust_score: updatedScore
-      });
+    if (profile) {
+      setProfile({ ...profile, trust_score: updatedScore });
     }
-    // reload to catch fresh log node
     loadDashboard(token, true);
   };
 
-  // Setup diagnostic banner dismissing
+  // Global Toast Timing Automations
   useEffect(() => {
     if (errorText) {
       const timer = setTimeout(() => setErrorText(null), 6000);
@@ -192,138 +202,134 @@ export default function App() {
     }
   }, [successToast]);
 
-  // If unauthenticated: Splash & intuitive registration form
-  if (!user) {
+  // Initial App Mount Interceptor Loading Framework
+  if (initializing) {
     return (
-      <div className="min-h-screen bg-[#0e0e0e]">
-        {/* Diagnostic connection banner for user visibility */}
-        <div className="bg-gray-950/80 border-b border-gray-900 py-2.5 px-4 text-center text-xs font-mono text-gray-400 flex items-center justify-center gap-2">
+      <div className="flex h-screen w-screen items-center justify-center bg-[#121212] font-mono text-white">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="h-9 w-9 animate-spin rounded-xl bg-[#0EBD2B]/10 border border-[#0EBD2B] flex items-center justify-center text-[#0EBD2B]">
+            ⚡
+          </div>
+          <p className="text-xs uppercase tracking-widest text-white/40 font-bold animate-pulse">
+            Bootstrapping TrustLedger Security Nodes...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // UNAUTHENTICATED GATEWAY ENTRY ROUTE (SPLASHVIEW)
+  if (!firebaseUser || !profile) {
+    return (
+      <div className="min-h-screen bg-[#0e0e0e] flex flex-col justify-between">
+        <div className="bg-gray-950/80 border-b border-white/5 py-2.5 px-4 text-center text-[11px] font-mono text-gray-400 flex items-center justify-center gap-2">
           <Server className={`w-3.5 h-3.5 ${apiOnline ? "text-emerald-500" : "text-amber-500 animate-pulse"}`} />
-          <span>
-            API CLUSTER HEARTBEAT STATUS:{" "}
-            {apiOnline === null ? "CHECKING HEARTBEAT CODE..." : apiOnline ? "ONLINE (https://trustledger-1.onrender.com)" : "ADAPTIVE SANDBOX CORE FALLBACKS ENGAGED"}
+          <span className="uppercase font-bold tracking-wider">
+            API SYSTEM GATEWAY STATUS:{" "}
+            {apiOnline === null ? "POLLING CORE HEARTBEAT..." : apiOnline ? "ONLINE (https://trustledger-1.onrender.com)" : "ADAPTIVE SANDBOX MODE ACTIVATED"}
           </span>
         </div>
 
         {errorText && (
-          <div className="bg-red-500/10 border-b border-red-500/20 text-red-400 py-3 text-center text-xs font-mono flex items-center justify-center gap-2 px-4 shadow-lg">
+          <div className="bg-red-950/40 border-b border-red-500/20 text-red-400 py-3 text-center text-xs font-mono flex items-center justify-center gap-2 px-4">
             <ShieldAlert className="w-4 h-4 text-red-500 animate-bounce" />
             <span>{errorText}</span>
           </div>
         )}
 
-        <SplashView
-          onSuccess={(loggedInUser) => {
-            setUser(loggedInUser);
-            setToken(loggedInUser.token);
-            setSuccessToast(`Welcome to TrustLedger, logged in as ${loggedInUser.name}`);
-            loadDashboard(loggedInUser.token);
-          }}
-          setError={(msg) => setErrorText(msg)}
-        />
+        <div className="flex-1 flex items-center justify-center">
+          <SplashView
+            onSuccess={async (loggedInUser) => {
+              const liveToken = await auth.currentUser?.getIdToken(true);
+              setToken(liveToken || null);
+              await loadDashboard(liveToken || null);
+            }}
+            setError={(msg) => setErrorText(msg)}
+          />
+        </div>
       </div>
     );
   }
 
-  // Authenticated State Layout Core
+  // Dynamic Theme Palette Matrix parsing boundary limits
+  const getReputationConfig = (score: number) => {
+    if (score <= 60) return { name: "Growing Node", hex: "#9C1908" };
+    if (score <= 75) return { name: "Trusted Tier", hex: "#CE6D11" };
+    if (score <= 90) return { name: "Established Merchant", hex: "#DDE00D" };
+    return { name: "Elite Supplier", hex: "#0EBD2B" };
+  };
+
+  const currentReputation = getReputationConfig(profile.trust_score);
+
   return (
     <div className="min-h-screen bg-[#121212] flex flex-col md:flex-row text-white/90">
       
-      {/* SIDEBAR */}
-      <aside className="w-full md:w-64 bg-[#1A1A1A] border-r border-white/10 p-6 flex flex-col justify-between hover:border-white/20 transition-all flex-shrink-0">
+      {/* SIDEBAR NAVIGATION ENGINE */}
+      <aside className="w-full md:w-66 bg-[#1A1A1A] border-r border-white/5 p-6 flex flex-col justify-between flex-shrink-0">
         <div className="space-y-8">
-          {/* Sidebar Chain Brand Header */}
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-[#0EBD2B] rounded flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-[#121212]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
+            <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: currentReputation.hex }}>
+              <div className="w-3 h-3 bg-[#121212] rotate-45 transform" />
             </div>
             <div>
               <h1 className="text-md font-extrabold tracking-tight text-white font-mono uppercase">
-                TRUSTLEDGER <span className="text-[#0EBD2B] font-black">CORE</span>
+                TRUSTLEDGER <span style={{ color: currentReputation.hex }}>CORE</span>
               </h1>
-              <span className="text-[9px] font-mono tracking-widest text-white/40 uppercase block font-semibold">
-                SYSTEM INTERFACE
+              <span className="text-[9px] font-mono tracking-widest text-white/40 uppercase block font-black">
+                SUPPLY ENGINE v2026
               </span>
             </div>
           </div>
 
-          {/* Connected User Badge detail */}
-          <div className="p-3.5 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
-            <span className="text-[10px] font-mono text-white/40 uppercase block font-bold mb-1">Authenticated Broker</span>
-            <div className="text-xs font-bold text-white truncate">{user.name}</div>
-            <div className="text-[10px] font-mono text-[#0EBD2B] mt-1 font-semibold flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-[#0EBD2B] animate-pulse" /> Score: {user.trust_score} / 100
+          {/* DYNAMIC PROFILE CARD ATTACHMENT */}
+          <div className="p-4 bg-black/40 rounded-xl border border-white/5 transition-colors">
+            <span className="text-[9px] font-mono text-white/30 uppercase block font-black mb-1">Authenticated Broker</span>
+            <div className="text-xs font-extrabold text-white truncate font-sans">{profile.name}</div>
+            <div className="text-[10px] font-mono mt-1.5 font-bold flex items-center gap-1.5" style={{ color: currentReputation.hex }}>
+              <Sparkles className="w-3 h-3 animate-pulse" /> {currentReputation.name} ({profile.trust_score}/100)
             </div>
           </div>
 
-          {/* Router State Buttons list */}
-          <nav className="space-y-1.5">
-            <span className="text-[9px] font-mono text-white/30 tracking-wider uppercase block mb-2 font-bold select-none">
-              Ecosystem Views
+          <nav className="space-y-2">
+            <span className="text-[9px] font-mono text-white/30 tracking-wider uppercase block mb-2 font-bold">
+              Ecosystem Maps
             </span>
 
-            <button
-              onClick={() => setActiveTab("dashboard")}
-              className={`w-full py-2.5 px-3 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all text-left ${
-                activeTab === "dashboard"
-                  ? "bg-[#0EBD2B] text-[#121212] shadow-md shadow-[#0EBD2B]/20"
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Layers className="w-4 h-4 flex-shrink-0" />
-              HUD Scoreboard
-            </button>
-
-            <button
-              onClick={() => setActiveTab("audit")}
-              className={`w-full py-2.5 px-3 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all text-left ${
-                activeTab === "audit"
-                  ? "bg-[#0EBD2B] text-[#121212] shadow-md shadow-[#0EBD2B]/20"
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <History className="w-4 h-4 flex-shrink-0" />
-              Graph Audit Timeline
-            </button>
-
-            <button
-              onClick={() => setActiveTab("chat")}
-              className={`w-full py-2.5 px-3 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all text-left ${
-                activeTab === "chat"
-                  ? "bg-[#0EBD2B] text-[#121212] shadow-md shadow-[#0EBD2B]/20"
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Bot className="w-4 h-4 flex-shrink-0" />
-              Advisor AI Chat
-            </button>
-
-            <button
-              onClick={() => setActiveTab("labor")}
-              className={`w-full py-2.5 px-3 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all text-left ${
-                activeTab === "labor"
-                  ? "bg-[#0EBD2B] text-[#121212] shadow-md shadow-[#0EBD2B]/20"
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Users className="w-4 h-4 flex-shrink-0" />
-              Workforce settling
-            </button>
+            {[
+              { id: "dashboard", label: "HUD Scoreboard", icon: Layers },
+              { id: "audit", label: "Graph Audit Trail", icon: History },
+              { id: "chat", label: "Advisor AI Chat", icon: Bot },
+              { id: "labor", label: "Workforce Settlement", icon: Users }
+            ].map((tabConfig) => {
+              const IconComponent = tabConfig.icon;
+              const isSelected = activeTab === tabConfig.id;
+              return (
+                <button
+                  key={tabConfig.id}
+                  onClick={() => setActiveTab(tabConfig.id as any)}
+                  className={`w-full py-2.5 px-3 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all text-left ${
+                    isSelected
+                      ? "bg-white text-[#121212] shadow-xl"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <IconComponent className="w-4 h-4 flex-shrink-0" />
+                  {tabConfig.label}
+                </button>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Heartbeat Status and logout action in sidebar bottom */}
         <div className="pt-6 border-t border-white/5 space-y-4">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-white/30 uppercase select-none">
-            <span className={`w-2 h-2 rounded-full ${apiOnline ? "bg-[#0EBD2B]" : "bg-amber-500 animate-pulse"}`}></span>
-            <span>Gateway: {apiOnline ? "FastAPI Connected" : "Local Gateway"}</span>
+          <div className="flex items-center gap-2 text-[10px] font-mono text-white/30 uppercase select-none font-bold">
+            <span className={`w-2 h-2 rounded-full ${apiOnline ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}></span>
+            <span>Gateway: {apiOnline ? "Production Cluster" : "Offline Sandbox"}</span>
           </div>
 
           <button
             onClick={handleLogout}
-            className="w-full py-2 bg-black/40 border border-white/5 rounded-lg text-[11px] font-mono uppercase text-red-400 hover:text-white hover:bg-red-950/20 hover:border-red-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-2 bg-black/40 border border-white/5 rounded-lg text-[11px] font-mono uppercase text-red-400 hover:text-white hover:bg-red-950/20 hover:border-red-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer font-bold"
           >
             <LogOut className="w-3.5 h-3.5" />
             Sign Out Token
@@ -331,42 +337,35 @@ export default function App() {
         </div>
       </aside>
 
-      {/* MAIN LAYOUT */}
+      {/* COMPONENT VIEWPORT CONTAINER WINDOW */}
       <main className="flex-1 p-6 md:p-8 space-y-6 max-h-screen overflow-y-auto">
         
-        {/* Banner notifications */}
         {errorText && (
-          <div className="bg-red-500/15 border border-red-500/30 text-red-400 p-4 rounded-xl text-xs font-mono flex items-center gap-2.5 shadow-lg relative">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs font-mono flex items-center gap-2.5 shadow-lg">
             <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0 animate-bounce" />
             <span>{errorText}</span>
           </div>
         )}
 
         {successToast && (
-          <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 p-4 rounded-xl text-xs font-mono flex items-center gap-2.5 shadow-lg relative animate-fade-in">
+          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl text-xs font-mono flex items-center gap-2.5 shadow-lg">
             <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <span>{successToast}</span>
           </div>
         )}
 
-        {/* SCREEN ROUTER */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-24 space-y-3">
-            <span className="w-10 h-10 rounded-xl bg-[#0EBD2B]/10 border border-[#0EBD2B]/30 flex items-center justify-center text-[#0EBD2B] animate-spin">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </span>
-            <div className="text-xs font-mono text-gray-500 uppercase tracking-widest animate-pulse">
-              Syncing Graph Ledger Nodes...
+          <div className="flex flex-col items-center justify-center py-32 space-y-3">
+            <span className="w-8 h-8 rounded-lg border-2 border-t-transparent animate-spin" style={{ borderColor: currentReputation.hex, borderTopColor: "transparent" }}></span>
+            <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest font-bold animate-pulse">
+              Syncing Ledger Nodes From Cluster...
             </div>
           </div>
         ) : (
-          <div>
+          <div className="animate-fade-in">
             {activeTab === "dashboard" && (
               <DashboardView
-                user={user}
+                user={profile}
                 transactions={transactions}
                 onOpenVoice={() => setIsVoiceOpen(true)}
                 onOpenLedger={() => setIsLedgerOpen(true)}
@@ -397,7 +396,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Absolute floating system process indicators (Screen 3) */}
+        {/* SCREEN 3 PIPELINE TASK BACKGROUND TRACKER */}
         <BackgroundJobTracker
           jobId={activeJobId}
           token={token}
@@ -406,39 +405,31 @@ export default function App() {
           onClearJob={() => setActiveJobId(null)}
         />
 
-        {/* MODAL WINDOWS CONTROLS */}
-        
-        {/* Voice process Modal */}
+        {/* MULTIPART VOICE SUBMISSION CONTROLLER */}
         <VoiceLoggingModal
           isOpen={isVoiceOpen}
           onClose={() => setIsVoiceOpen(false)}
-          onTriggerJob={(file) => {
-            TrustLedgerAPI.processVoice(file, token)
-              .then((res) => {
-                setActiveJobId(res.job_id);
-              })
-              .catch((err) => {
-                setErrorText("Failed to queue voice processing pipeline.");
-              });
+          onTriggerJob={(fileBlob) => {
+            setIsVoiceOpen(false);
+            TrustLedgerAPI.processVoice(fileBlob, token)
+              .then((res) => setActiveJobId(res.job_id))
+              .catch(() => setErrorText("Failed to queue async voice processing worker."));
           }}
         />
 
-        {/* Photo snapshot scan Modal */}
+        {/* MULTIPART SNAPSHOT IMAGE LEDGER PROCESSING CONTROLLER */}
         <ScanLedgerModal
           isOpen={isLedgerOpen}
           onClose={() => setIsLedgerOpen(false)}
-          onTriggerJob={(file) => {
-            TrustLedgerAPI.processLedger(file, token)
-              .then((res) => {
-                setActiveJobId(res.job_id);
-              })
-              .catch((err) => {
-                setErrorText("Failed to queue ledger scan processing pipeline.");
-              });
+          onTriggerJob={(fileBlob) => {
+            setIsLedgerOpen(false);
+            TrustLedgerAPI.processLedger(fileBlob, token)
+              .then((res) => setActiveJobId(res.job_id))
+              .catch(() => setErrorText("Failed to queue async image processing worker."));
           }}
         />
 
-        {/* Drawer Manual Entry Form OR Transaction Verification Sheet */}
+        {/* COMPREHENSIVE VERIFICATION LAYER & DRAWER SHEET MUTATOR */}
         <ManualEntryDrawer
           isOpen={isManualOpen}
           onClose={() => {
